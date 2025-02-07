@@ -1,7 +1,4 @@
-// src/types/ProjectsTypes.ts
-
 import { AddAddressRequest } from './ContactsTypes';
-import { ProjectOfUser } from './UsersToProjectsTypes';
 
 export interface AddProjectRequest {
     name: string;

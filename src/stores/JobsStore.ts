@@ -33,7 +33,6 @@ class JobsStoreClass extends BaseStore<GetAllJobsResult> {
         filters: { onDate?: string; fromDate?: string; toDate?: string; states?: string; page?: number; pageSize?: number } = {},
         cancelToken?: CancelToken
     ): Promise<GetAllJobsResult> {
-        const notifications = useNotifications();
         try {
             const response = await this.axios.get<GetAllJobsResult>(
                 `/v1/projects/${projectId}/jobs`,
@@ -52,7 +51,6 @@ class JobsStoreClass extends BaseStore<GetAllJobsResult> {
         jobId: string,
         cancelToken?: CancelToken
     ): Promise<GetSingleJobResult> {
-        const notifications = useNotifications();
         try {
             const response = await this.axios.get<GetSingleJobResult>(
                 `/v1/projects/${projectId}/jobs/${jobId}`,
