@@ -1,39 +1,53 @@
-import {browserSessionPersistence, browserLocalPersistence, setPersistence, signInWithEmailAndPassword, signOut} from 'firebase/auth';
-import {firebaseAuth} from './firebaseConfig';
+import {
+  browserSessionPersistence,
+  browserLocalPersistence,
+  setPersistence,
+  signInWithEmailAndPassword,
+  signOut,
+  User as FirebaseUser,
+  onAuthStateChanged as firebaseAuthStateChanged
+} from 'firebase/auth';
+import { firebaseAuth } from './firebaseConfig';
 
-export const signInWithEmail = async (email: string, password: string, remember: boolean) => {
+export interface AuthResult {
+  success: boolean;
+  user: FirebaseUser | null;
+  error: string | null;
+}
+
+export const signInWithEmail = async (email: string, password: string, remember: boolean): Promise<AuthResult> => {
   const persistence = remember ? browserLocalPersistence : browserSessionPersistence;
-  return setPersistence(firebaseAuth, persistence).then(async () => {
-    try {
-      const result = await signInWithEmailAndPassword(firebaseAuth, email, password);
 
-      return {
-        success: true,
-        user: result.user,
-        error: null,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        user: null,
-        error: error.message,
-      };
-    }
-  });
+  try {
+    await setPersistence(firebaseAuth, persistence);
+    const result = await signInWithEmailAndPassword(firebaseAuth, email, password);
+
+    return {
+      success: true,
+      user: result.user,
+      error: null,
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      user: null,
+      error: error.message || 'An unknown error occurred',
+    };
+  }
 };
 
-export const firebaseSignOut = async () => {
+export const firebaseSignOut = async (): Promise<{success: boolean, error?: string}> => {
   try {
     await signOut(firebaseAuth);
     return { success: true };
   } catch (error: any) {
     return {
       success: false,
-      error: error.message,
+      error: error.message || 'Error during sign out',
     };
   }
 };
 
-export const onAuthStateChanged = (callback: (user: any) => void) => {
-  return firebaseAuth.onAuthStateChanged(callback);
+export const onAuthStateChanged = (callback: (user: FirebaseUser | null) => void) => {
+  return firebaseAuthStateChanged(firebaseAuth, callback);
 };

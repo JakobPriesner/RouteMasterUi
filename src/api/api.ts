@@ -12,7 +12,8 @@ export const api = axios.create({
 api.interceptors.request.use(
     async (config) => {
         await firebaseAuth.authStateReady();
-        const token = await firebaseAuth.currentUser?.getIdToken()
+
+        const token = await firebaseAuth.currentUser?.getIdToken();
         if (token) {
             config.headers['Authorization'] = `Bearer ${token}`;
         }
@@ -46,7 +47,7 @@ api.interceptors.response.use(
                 if (window.location.pathname !== '/no-connection') {
                     sessionStorage.setItem('redirectUrl', window.location.pathname);
 
-                    window.location.href = '/no-connection';
+                    // window.location.href = '/no-connection';
                 }
             }
         } else {

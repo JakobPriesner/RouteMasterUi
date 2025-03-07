@@ -4,7 +4,7 @@ import { ReactRouterAppProvider } from '@toolpad/core/react-router';
 import type { Authentication } from '@toolpad/core/AppProvider';
 import { firebaseSignOut, onAuthStateChanged } from './firebase/auth';
 import SessionContext, { type Session } from './SessionContext';
-import {useEffect} from "react";
+import {useEffect, useState} from "react";
 import {useNavigate} from "react-router-dom";
 import {User} from "./types/UsersTypes";
 import {UsersStore} from "./stores/UsersStore";
@@ -22,82 +22,89 @@ const AUTHENTICATION: Authentication = {
 };
 
 export default function App() {
-  const [session, setSession] = React.useState<Session | null>(null);
-  const [loading, setLoading] = React.useState(true);
-  const [user, setUser] = React.useState<User>();
+  const [session, setSession] = useState<Session | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<User | null>(null);
   const {projectId} = useParams();
   const navigation = useNavigation();
   const navigate = useNavigate();
 
   const sessionContextValue = React.useMemo(
-    () => ({
-      session,
-      setSession,
-      loading,
-    }),
-    [session, loading],
+      () => ({
+        session,
+        setSession,
+        loading,
+      }),
+      [session, loading],
   );
 
   useEffect(() => {
-    const userSubscription = UsersStore.getCurrentUser().subscribe(user => {
-      setUser(user);
-      if (user) {
-        setLoading(false);
-      }
-    });
-    const authStateUnsubscribe = onAuthStateChanged((user) => {
-      if (user) {
-        setSession({
-          user: {
-            name: user.name || '',
-            email: user.email || '',
-            image: user.image || '',
-          },
-        });
-      } else {
+    const authUnsubscribe = onAuthStateChanged((firebaseUser) => {
+      if (!firebaseUser) {
+        setUser(null);
         setSession(null);
+        setLoading(false);
+        navigate("/sign-in");
+        return;
       }
+
+      setSession({
+        user: {
+          name: firebaseUser.displayName || '',
+          email: firebaseUser.email || '',
+          image: firebaseUser.photoURL || '',
+        },
+      });
+
+      const userSubscription = UsersStore.getCurrentUser().subscribe({
+        next: (userData) => {
+          setUser(userData);
+          setLoading(false);
+        },
+        error: (error) => {
+          console.error("Error loading user data:", error);
+          setLoading(false);
+          navigate("/sign-in");
+        }
+      });
+
+      return () => userSubscription.unsubscribe();
     });
 
-    return () => {
-      userSubscription.unsubscribe();
-      authStateUnsubscribe()
-    };
-  }, []);
+    return () => authUnsubscribe();
+  }, [navigate]);
 
   useEffect(() => {
-    if (loading) {
+    if (loading || !user) {
       return;
-    }
-
-    if (!user) {
-      navigate("/no-connection");
     }
 
     if (projectId) {
       return;
     }
 
-    if (user.projects.length === 1) {
+    if (user.projects.length === 0) {
+    } else if (user.projects.length === 1) {
+      // Single project - navigate directly
       navigate(`/projects/${user.projects[0].projectId}`);
-    } else if (user.projects.length > 1) {
-      const defaultProject = user.projects.find(p => p.isDefaultProject)  || user.projects[0];
+    } else {
+      const defaultProject = user.projects.find(p => p.isDefaultProject) || user.projects[0];
       navigate(`/projects/${defaultProject.projectId}`);
     }
-  }, [user]);
+  }, [user, loading, projectId, navigate]);
 
   return (
-    <ReactRouterAppProvider
-      navigation={navigation}
-      branding={BRANDING}
-      session={session}
-      authentication={AUTHENTICATION}
-    >
-      <SessionContext.Provider value={sessionContextValue}>
-        <LocalizationProvider dateAdapter={AdapterDateFns}>
-          <Outlet />
-        </LocalizationProvider>
-      </SessionContext.Provider>
-    </ReactRouterAppProvider>
+      <ReactRouterAppProvider
+          navigation={navigation}
+          branding={BRANDING}
+          session={session}
+          authentication={AUTHENTICATION}
+      >
+        <SessionContext.Provider value={sessionContextValue}>
+          <LocalizationProvider dateAdapter={AdapterDateFns}>
+            <Outlet />
+          </LocalizationProvider>
+        </SessionContext.Provider>
+      </ReactRouterAppProvider>
   );
 }

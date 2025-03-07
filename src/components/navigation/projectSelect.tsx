@@ -16,15 +16,22 @@ import {Subscription} from "rxjs";
 import {useSelectedProject} from "../../stores/SelectedProjectStore";
 
 export default function ProjectSelect() {
-    const [user, setUser] = useState<User>();
+    const [user, setUser] = useState<User | null>(null);
     const {selectedProject} = useSelectedProject();
     const navigate = useNavigate();
     const [isDialogOpen, setIsDialogOpen] = useState<boolean>(false);
+    const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        const userSubscription: Subscription = UsersStore.getCurrentUser().subscribe(setUser);
-
-        UsersStore.getCurrentUser();
+        const userSubscription: Subscription = UsersStore.getCurrentUser().subscribe({
+            next: (userData) => {
+                setUser(userData);
+                setLoading(false);
+            },
+            error: () => {
+                setLoading(false);
+            }
+        });
 
         return () => {
             userSubscription.unsubscribe();
@@ -40,6 +47,10 @@ export default function ProjectSelect() {
     };
 
     const renderProjectsSelection = () => {
+        if (loading) {
+            return null; // Could add a loading indicator here
+        }
+
         if (!user?.projects?.length) {
             return (
                 <Button fullWidth onClick={() => setIsDialogOpen(true)}>

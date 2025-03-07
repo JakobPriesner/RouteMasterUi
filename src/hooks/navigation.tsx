@@ -10,19 +10,28 @@ import {
 } from "@mui/icons-material";
 import {ProjectsStore} from "../stores/ProjectsStore";
 import {Project} from "../types/ProjectsTypes";
+import {firebaseAuth} from "../firebase/firebaseConfig";
 
 export const useNavigation = (): Navigation => {
     const { projectId } = useParams();
     const [navigation, setNavigation] = useState<Navigation>();
 
     useEffect(() => {
+        if (!firebaseAuth.currentUser) {
+            return;
+        }
+
+        if (!projectId) {
+            return;
+        }
+
         const subscription = ProjectsStore.getProjectById(projectId).subscribe((project) => {
             const newNavigation = createNavigation(project);
 
             setNavigation(newNavigation);
         });
         return () => subscription.unsubscribe();
-    }, [projectId]);
+    }, [firebaseAuth.currentUser, projectId]);
 
     function createNavigation(project: Project | null): Navigation {
         const newNavigation: Navigation = [];

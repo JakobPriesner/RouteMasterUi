@@ -4,6 +4,7 @@ import {createBrowserRouter, Navigate, RouterProvider} from 'react-router';
 import App from './App';
 import Layout from './layouts/dashboard';
 import SignInPage from './pages/signin';
+import HomePage from './pages/index';
 import Project from "./pages/project/project";
 import ProjectSettings from "./pages/project/projectSettings";
 import Contacts from "./pages/contact/contacts";
@@ -27,8 +28,12 @@ const router = createBrowserRouter([
         Component: Layout,
         children: [
           {
+            index: true,
+            Component: HomePage
+          },
+          {
             path: '/projects',
-            element: <Navigate to={"/"} replace />
+            element: <Navigate to="/" replace />
           },
           {
             path: '/projects/:projectId',
@@ -77,11 +82,11 @@ const router = createBrowserRouter([
 ]);
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <script src={`https://maps.googleapis.com/maps/api/js?key=${env_variables.GOOGLE_MAPS_API_KEY}&libraries=places`}
-            async
-            defer>
-    </script>
-    <RouterProvider router={router} />
-  </React.StrictMode>,
+    <React.StrictMode>
+      <script src={`https://maps.googleapis.com/maps/api/js?key=${env_variables.GOOGLE_MAPS_API_KEY}&libraries=places`}
+              async
+              defer>
+      </script>
+      <RouterProvider router={router} />
+    </React.StrictMode>,
 );
