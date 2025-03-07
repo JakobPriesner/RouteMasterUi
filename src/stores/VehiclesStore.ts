@@ -1,111 +1,112 @@
 import { BaseStore } from './BaseStore';
 import { CancelToken } from 'axios';
-import {
-    AddVehicleRequest,
-    GetAllVehiclesResult,
-    GetVehicleByIdResult,
-    Vehicle,
-} from '../types/VehiclesTypes';
-import {useNotifications} from "@toolpad/core/useNotifications";
+import { AddVehicleRequest, GetAllVehiclesResult, GetVehicleByIdResult, Vehicle } from '../types/VehiclesTypes';
+import { BehaviorSubject } from 'rxjs';
 
-class VehiclesStoreClass extends BaseStore<GetAllVehiclesResult> {
-    async addVehicleToProject(
+class VehiclesStoreClass extends BaseStore {
+    protected vehiclesCache$ = new BehaviorSubject<{ [vehicleId: string]: Vehicle }>({});
+
+    addVehicleToProject(
         projectId: string,
         vehicleData: AddVehicleRequest,
         cancelToken?: CancelToken
-    ): Promise<string> {
-        const notifications = useNotifications();
-        try {
-            const response = await this.axios.post<string>(
-                `/v1/projects/${projectId}/vehicles`,
-                vehicleData,
-                { cancelToken }
-            );
-            notifications.show('Vehicle added successfully!', {
-                severity: 'success',
-                autoHideDuration: 3000,
+    ): BehaviorSubject<string | null> {
+        const subject = new BehaviorSubject<string | null>(null);
+        this.axios
+            .post<string>(`/v1/projects/${projectId}/vehicles`, vehicleData, { cancelToken })
+            .then(response => {
+                this.getAllVehiclesOfProject(projectId, cancelToken);
+                subject.next(response.data);
+            })
+            .catch(error => {
+                this.handleError(error, 'Failed to add vehicle.');
+                subject.error(error);
             });
-            await this.getAllVehiclesOfProject(projectId, cancelToken);
-            return response.data;
-        } catch (error: any) {
-            this.handleError(error, 'Failed to add vehicle.');
-            throw error;
-        }
+        return subject;
     }
 
-    async getAllVehiclesOfProject(
+    getAllVehiclesOfProject(
         projectId: string,
         cancelToken?: CancelToken
-    ): Promise<GetAllVehiclesResult> {
-        try {
-            const response = await this.axios.get<GetAllVehiclesResult>(
-                `/v1/projects/${projectId}/vehicles`,
-                { cancelToken }
-            );
-            this.setState(response.data);
-            return response.data;
-        } catch (error: any) {
-            this.handleError(error, 'Failed to fetch vehicles.');
-            throw error;
-        }
+    ): BehaviorSubject<Vehicle[]> {
+        const subject = new BehaviorSubject<Vehicle[]>([]);
+        this.axios
+            .get<GetAllVehiclesResult>(`/v1/projects/${projectId}/vehicles`, { cancelToken })
+            .then(response => {
+                const vehicles = response.data.vehicles;
+                const currentCache = this.vehiclesCache$.getValue();
+                vehicles.forEach(vehicle => {
+                    currentCache[vehicle.id] = vehicle;
+                });
+                this.vehiclesCache$.next(currentCache);
+                subject.next(Object.values(currentCache));
+            })
+            .catch(error => this.handleError(error, 'Failed to fetch vehicles.'));
+        return subject;
     }
 
-    async getVehicleById(
+    getVehicleById(
         projectId: string,
         vehicleId: string,
         cancelToken?: CancelToken
-    ): Promise<Vehicle> {
-        try {
-            const response = await this.axios.get<GetVehicleByIdResult>(
-                `/v1/projects/${projectId}/vehicles/${vehicleId}`,
-                { cancelToken }
-            );
-            return response.data.vehicle;
-        } catch (error: any) {
-            this.handleError(error, 'Failed to fetch vehicle.');
-            throw error;
-        }
+    ): BehaviorSubject<Vehicle | null> {
+        const subject = new BehaviorSubject<Vehicle | null>(null);
+        this.vehiclesCache$.subscribe(cache => {
+            if (cache[vehicleId]) {
+                subject.next(cache[vehicleId]);
+                return;
+            }
+            this.axios
+                .get<GetVehicleByIdResult>(`/v1/projects/${projectId}/vehicles/${vehicleId}`, { cancelToken })
+                .then(response => {
+                    const vehicle = response.data.vehicle;
+                    const currentCache = this.vehiclesCache$.getValue();
+                    currentCache[vehicle.id] = vehicle;
+                    this.vehiclesCache$.next(currentCache);
+                    subject.next(vehicle);
+                })
+                .catch(error => this.handleError(error, 'Failed to fetch vehicle.'));
+        });
+        return subject;
     }
 
-    async updateVehicle(
+    updateVehicle(
         projectId: string,
         vehicleId: string,
         vehicleData: Partial<Vehicle>,
         cancelToken?: CancelToken
-    ): Promise<void> {
-        const notifications = useNotifications();
-        const url = `/v1/projects/${projectId}/vehicles/${vehicleId}`;
-        try {
-            await this.axios.put(url, vehicleData, { cancelToken });
-            notifications.show('Vehicle updated successfully!', {
-                severity: 'success',
-                autoHideDuration: 3000,
+    ): BehaviorSubject<null> {
+        const subject = new BehaviorSubject<null>(null);
+        this.axios
+            .put(`/v1/projects/${projectId}/vehicles/${vehicleId}`, vehicleData, { cancelToken })
+            .then(() => {
+                this.getAllVehiclesOfProject(projectId, cancelToken);
+                subject.next(null);
+            })
+            .catch(error => {
+                this.handleError(error, 'Failed to update vehicle.');
+                subject.error(error);
             });
-            await this.getAllVehiclesOfProject(projectId, cancelToken);
-        } catch (error: any) {
-            this.handleError(error, 'Failed to update vehicle.');
-            throw error;
-        }
+        return subject;
     }
 
-    async deleteVehicleById(
+    deleteVehicleById(
         projectId: string,
         vehicleId: string,
         cancelToken?: CancelToken
-    ): Promise<void> {
-        const notifications = useNotifications();
-        const url = `/v1/projects/${projectId}/vehicles/${vehicleId}`;
-        try {
-            await this.axios.delete(url, { cancelToken });
-            notifications.show('Vehicle deleted successfully!', {
-                severity: 'success',
-                autoHideDuration: 3000,
+    ): BehaviorSubject<null> {
+        const subject = new BehaviorSubject<null>(null);
+        this.axios
+            .delete(`/v1/projects/${projectId}/vehicles/${vehicleId}`, { cancelToken })
+            .then(() => {
+                this.getAllVehiclesOfProject(projectId, cancelToken);
+                subject.next(null);
+            })
+            .catch(error => {
+                this.handleError(error, 'Failed to delete vehicle.');
+                subject.error(error);
             });
-            await this.getAllVehiclesOfProject(projectId, cancelToken);
-        } catch (error: any) {
-            this.handleError(error, 'Failed to delete vehicle.');
-            throw error;
-        }
+        return subject;
     }
 }
 

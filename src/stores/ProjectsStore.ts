@@ -1,129 +1,106 @@
 import { BaseStore } from './BaseStore';
 import { CancelToken } from 'axios';
-import { AddProjectRequest, GetAllProjectsResult, Project, ProjectAnalyticsResult } from '../types/ProjectsTypes';
-import {useNotifications} from "@toolpad/core/useNotifications";
+import { AddProjectRequest, GetAllProjectsResult, GetSingleProjectResult, Project, ProjectAnalyticsResult } from '../types/ProjectsTypes';
+import { BehaviorSubject } from 'rxjs';
 
-class ProjectsStoreClass extends BaseStore<GetAllProjectsResult> {
-    async addProject(
-        projectData: AddProjectRequest,
-        cancelToken?: CancelToken
-    ): Promise<string> {
-        const notifications = useNotifications();
-        try {
-            const response = await this.axios.post<string>(
-                '/v1/projects',
-                projectData,
-                { cancelToken }
-            );
-            notifications.show('Project added successfully!', {
-                severity: 'success',
-                autoHideDuration: 3000,
+class ProjectsStoreClass extends BaseStore {
+    protected projectsCache$ = new BehaviorSubject<{ [projectId: string]: Project }>({});
+
+    getAllProjectsOfUser(cancelToken?: CancelToken): BehaviorSubject<Project[]> {
+        const subject = new BehaviorSubject<Project[]>([]);
+        this.axios
+            .get<GetAllProjectsResult>('/v1/projects', { cancelToken })
+            .then(response => {
+                const projects = response.data.projects;
+                const cache = this.projectsCache$.getValue();
+                projects.forEach(project => {
+                    cache[project.id] = project;
+                });
+                this.projectsCache$.next(cache);
+                subject.next(Object.values(cache));
+            })
+            .catch(error => {
+                this.handleError(error, 'Es gab ein Problem beim Laden der Projekte.');
+                subject.error(error);
             });
-            await this.getAllProjectsOfUser(cancelToken);
-            return response.data;
-        } catch (error: any) {
-            this.handleError(error, 'Failed to add project.');
-            throw error;
-        }
+        return subject;
     }
 
-    async getAllProjectsOfUser(cancelToken?: CancelToken): Promise<GetAllProjectsResult> {
-        try {
-            const response = await this.axios.get<GetAllProjectsResult>(
-                '/v1/projects',
-                { cancelToken }
-            );
-            this.setState(response.data);
-            return response.data;
-        } catch (error: any) {
-            this.handleError(error, 'Failed to fetch projects.');
-            throw error;
-        }
+    getProjectById(projectId: string, cancelToken?: CancelToken): BehaviorSubject<Project | null> {
+        const subject = new BehaviorSubject<Project | null>(null);
+        this.projectsCache$.subscribe(cache => {
+            if (cache[projectId]) {
+                subject.next(cache[projectId]);
+                return;
+            }
+            this.axios
+                .get<GetSingleProjectResult>(`/v1/projects/${projectId}`, { cancelToken })
+                .then(response => {
+                    const project = response.data.project;
+                    const currentCache = this.projectsCache$.getValue();
+                    currentCache[project.id] = project;
+                    this.projectsCache$.next(currentCache);
+                    subject.next(project);
+                })
+                .catch(error => {
+                    this.handleError(error, 'Es gab ein Problem beim Laden des Projekts.');
+                    subject.error(error);
+                });
+        });
+        return subject;
     }
 
-    async deleteAllProjectsOfUser(cancelToken?: CancelToken): Promise<void> {
-        const notifications = useNotifications();
-        try {
-            await this.axios.delete('/v1/projects', { cancelToken });
-            notifications.show('All projects deleted successfully!', {
-                severity: 'success',
-                autoHideDuration: 3000,
+    addProject(projectData: AddProjectRequest, cancelToken?: CancelToken): Promise<string> {
+        return this.axios
+            .post<string>('/v1/projects', projectData, { cancelToken })
+            .then(response => {
+                this.getAllProjectsOfUser(cancelToken);
+                return response.data;
+            })
+            .catch(error => {
+                this.handleError(error, 'Es gab ein Problem beim Erstellen des Projekts.');
+                throw error;
             });
-            this.setState(null);
-        } catch (error: any) {
-            this.handleError(error, 'Failed to delete projects.');
-            throw error;
+    }
+
+    async updateProject(projectId: string, projectData: Project, cancelToken?: CancelToken): Promise<void> {
+
+        try {
+            await this.axios.put(`/v1/projects/${projectId}`, projectData, { cancelToken });
+            const currentCache = this.projectsCache$.getValue();
+            currentCache[projectId] = projectData;
+            this.projectsCache$.next(currentCache);
+        } catch (error) {
+            this.handleError(error, 'Es gab ein Problem beim Ändern des Projekts.');
         }
     }
 
-    async getProjectById(
-        projectId: string,
-        cancelToken?: CancelToken
-    ): Promise<Project> {
+    async deleteProjectById(projectId: string, cancelToken?: CancelToken): Promise<void> {
+        const subject = new BehaviorSubject<null>(null);
+
         try {
-            const response = await this.axios.get<Project>(
-                `/v1/projects/${projectId}`,
-                { cancelToken }
-            );
-            return response.data;
-        } catch (error: any) {
-            this.handleError(error, 'Failed to fetch project.');
-            throw error;
+            await this.axios.delete(`/v1/projects/${projectId}`, { cancelToken });
+            const currentCache = this.projectsCache$.getValue();
+            delete currentCache[projectId];
+            this.projectsCache$.next(currentCache);
+        } catch (error) {
+            this.handleError(error, 'Es gab ein Problem beim Löschen des Projekts.');
+            subject.error(error);
         }
     }
 
-    async updateProject(
-        projectId: string,
-        projectData: Project,
-        cancelToken?: CancelToken
-    ): Promise<void> {
-        const notifications = useNotifications();
-        const url = `/v1/projects/${projectId}`;
-        try {
-            await this.axios.put(url, projectData, { cancelToken });
-            notifications.show('Project updated successfully!', {
-                severity: 'success',
-                autoHideDuration: 3000,
+    getProjectAnalytics(projectId: string, cancelToken?: CancelToken): BehaviorSubject<ProjectAnalyticsResult | null> {
+        const subject = new BehaviorSubject<ProjectAnalyticsResult | null>(null);
+        this.axios
+            .get<ProjectAnalyticsResult>(`/v1/projects/${projectId}/analytics`, { cancelToken })
+            .then(response => {
+                subject.next(response.data);
+            })
+            .catch(error => {
+                this.handleError(error, 'Es gab ein Problem beim Laden der Projekt Analysen.');
+                subject.error(error);
             });
-        } catch (error: any) {
-            this.handleError(error, 'Failed to update project.');
-            throw error;
-        }
-    }
-
-    async deleteProjectById(
-        projectId: string,
-        cancelToken?: CancelToken
-    ): Promise<void> {
-        const notifications = useNotifications();
-        const url = `/v1/projects/${projectId}`;
-        try {
-            await this.axios.delete(url, { cancelToken });
-            notifications.show('Project deleted successfully!', {
-                severity: 'success',
-                autoHideDuration: 3000,
-            });
-            await this.getAllProjectsOfUser(cancelToken);
-        } catch (error: any) {
-            this.handleError(error, 'Failed to delete project.');
-            throw error;
-        }
-    }
-
-    async getProjectAnalytics(
-        projectId: string,
-        cancelToken?: CancelToken
-    ): Promise<ProjectAnalyticsResult> {
-        try {
-            const response = await this.axios.get<ProjectAnalyticsResult>(
-                `/v1/projects/${projectId}/analytics`,
-                { cancelToken }
-            );
-            return response.data;
-        } catch (error: any) {
-            this.handleError(error, 'Failed to fetch project analytics.');
-            throw error;
-        }
+        return subject;
     }
 }
 

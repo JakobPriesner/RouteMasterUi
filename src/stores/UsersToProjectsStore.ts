@@ -1,57 +1,49 @@
-// src/stores/UsersToProjectsStore.ts
 import { BaseStore } from './BaseStore';
 import { CancelToken } from 'axios';
-import {
-    AddUserToProjectRequest,
-    AddUserToProjectResult,
-} from '../types/UsersToProjectsTypes';
-import {useNotifications} from "@toolpad/core/useNotifications";
+import { AddUserToProjectRequest, AddUserToProjectResult } from '../types/UsersToProjectsTypes';
+import { BehaviorSubject } from 'rxjs';
+import { useNotifications } from '@toolpad/core/useNotifications';
 
-class UsersToProjectsStoreClass extends BaseStore<AddUserToProjectResult> {
-    async addUserToProject(
+class UsersToProjectsStoreClass extends BaseStore {
+    addUserToProject(
         projectId: string,
         userId: string,
         data: AddUserToProjectRequest,
         cancelToken?: CancelToken
-    ): Promise<AddUserToProjectResult> {
+    ): BehaviorSubject<AddUserToProjectResult | null> {
+        const subject = new BehaviorSubject<AddUserToProjectResult | null>(null);
         const notifications = useNotifications();
-        try {
-            const response = await this.axios.post<AddUserToProjectResult>(
-                `/v1/projects/${projectId}/users/${userId}`,
-                data,
-                { cancelToken }
-            );
-            notifications.show('User added to project successfully!', {
-                severity: 'success',
-                autoHideDuration: 3000,
+        this.axios
+            .post<AddUserToProjectResult>(`/v1/projects/${projectId}/users/${userId}`, data, { cancelToken })
+            .then(response => {
+                notifications.show('User added to project successfully!', { severity: 'success', autoHideDuration: 3000 });
+                subject.next(response.data);
+            })
+            .catch(error => {
+                this.handleError(error, 'Failed to add user to project.');
+                subject.error(error);
             });
-            this.setState(response.data);
-            return response.data;
-        } catch (error: any) {
-            this.handleError(error, 'Failed to add user to project.');
-            throw error;
-        }
+        return subject;
     }
 
-    async deleteUserFromProject(
+    deleteUserFromProject(
         projectId: string,
         userId: string,
         cancelToken?: CancelToken
-    ): Promise<void> {
+    ): BehaviorSubject<null> {
+        const subject = new BehaviorSubject<null>(null);
         const notifications = useNotifications();
-        try {
-            await this.axios.delete(
-                `/v1/projects/${projectId}/users/${userId}`,
-                { cancelToken }
-            );
-            notifications.show('User removed from project successfully!', {
-                severity: 'success',
-                autoHideDuration: 3000,
+        this.axios
+            .delete(`/v1/projects/${projectId}/users/${userId}`, { cancelToken })
+            .then(() => {
+                notifications.show('User removed from project successfully!', { severity: 'success', autoHideDuration: 3000 });
+                subject.next(null);
+            })
+            .catch(error => {
+                this.handleError(error, 'Failed to remove user from project.');
+                subject.error(error);
             });
-        } catch (error: any) {
-            this.handleError(error, 'Failed to remove user from project.');
-            throw error;
-        }
+        return subject;
     }
 }
 

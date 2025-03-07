@@ -1,5 +1,3 @@
-// src/types/BillingTypes.ts
-
 export type BillingPlan = 'Basic' | 'Advanced' | 'Premium';
 
 export interface AddTokenRequest {

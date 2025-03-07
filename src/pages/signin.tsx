@@ -1,5 +1,4 @@
 'use client';
-import * as React from 'react';
 import LinearProgress from '@mui/material/LinearProgress';
 import {SignInPage, SupportedAuthProvider} from '@toolpad/core/SignInPage';
 import { Navigate } from 'react-router';
@@ -10,9 +9,7 @@ import {AuthProvider, AuthResponse} from "@toolpad/core";
 export default function SignIn() {
   const { session, loading } = useSession();
 
-  const providers: { id: SupportedAuthProvider; name: string }[] = [
-    { id: 'credentials', name: 'Email and password' },
-  ];
+  const providers: { id: SupportedAuthProvider; name: string }[] = [{ id: 'credentials', name: 'Email and password' },];
 
   const signIn: (
       provider: AuthProvider,
@@ -20,8 +17,9 @@ export default function SignIn() {
   ) => Promise<AuthResponse> | void = async (provider, formData) => {
     const email = formData?.get('email') as string;
     const password = formData?.get('password') as string;
+    const remember = formData?.get('remember') == "true";
 
-    const result = await signInWithEmail(email, password);
+    const result = await signInWithEmail(email, password, remember);
 
     if (result.success) {
       return {

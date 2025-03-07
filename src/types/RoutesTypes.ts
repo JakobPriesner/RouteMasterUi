@@ -1,6 +1,4 @@
-// src/types/RoutesTypes.ts
-
-import { JobWithContact } from './JobsTypes';
+import {JobWithContact} from "./JobTypes";
 
 export interface CreateRouteRequest {
     jobIds?: string[];
@@ -10,13 +8,21 @@ export interface CreateRouteRequest {
 
 export type RouteState = 'Planned' | 'Started' | 'InProgress' | 'Completed' | 'Cancelled';
 
+export const RouteStateLabels: Record<RouteState, string> = {
+    ["Planned"]: "geplant",
+    ["Started"]: "gestartet",
+    ["InProgress"]: "in Arbeit",
+    ["Completed"]: "abgeschlossen",
+    ["Cancelled"]: "abgebrochen"
+}
+
 export interface Route {
     id: string;
     vehicleId?: string;
     jobs: JobWithContact[];
     state: RouteState;
-    startTime?: string; // ISO date-time string
-    endTime?: string;   // ISO date-time string
+    startTime?: Date;
+    endTime?: Date;
     totalCostInEuros: number;
 }
 

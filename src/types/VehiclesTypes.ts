@@ -1,6 +1,10 @@
-// src/types/VehiclesTypes.ts
-
 import { AddAddressRequest } from './ContactsTypes';
+import {
+    DirectionsBikeRounded,
+    DirectionsCarRounded,
+    LocalShippingRounded,
+    TwoWheelerRounded
+} from "@mui/icons-material";
 
 export interface AddVehicleRequest {
     alias?: string;
@@ -11,7 +15,12 @@ export interface AddVehicleRequest {
     vehicleType: VehicleType;
 }
 
-export type VehicleType = 'Truck' | 'Car' | 'Motorcycle' | 'Bicycle' | 'Walking';
+export enum VehicleType {
+    Truck,
+    Car,
+    Motorcycle,
+    Bicycle
+}
 
 export interface Vehicle {
     id: string;
@@ -29,4 +38,18 @@ export interface GetAllVehiclesResult {
 
 export interface GetVehicleByIdResult {
     vehicle: Vehicle;
+}
+
+export const VehicleTypeLabels: Record<VehicleType, string> = {
+    [VehicleType.Bicycle]: "Fahrrad",
+    [VehicleType.Car]: "Auto",
+    [VehicleType.Truck]: "Lieferwagen",
+    [VehicleType.Motorcycle]: "Zweirad"
+}
+
+export const VehicleTypeIcons: Record<VehicleType, React.ElementType> = {
+    [VehicleType.Bicycle]: DirectionsBikeRounded,
+    [VehicleType.Car]: DirectionsCarRounded,
+    [VehicleType.Truck]: LocalShippingRounded,
+    [VehicleType.Motorcycle]: TwoWheelerRounded
 }

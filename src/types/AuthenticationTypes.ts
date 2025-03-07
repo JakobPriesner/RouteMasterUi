@@ -1,5 +1,3 @@
-// src/types/AuthenticationTypes.ts
-
 export interface RegisterRequest {
     firstName: string;
     lastName: string;

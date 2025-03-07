@@ -1,4 +1,5 @@
 import { AddAddressRequest } from './ContactsTypes';
+import {Address} from "./AddressTypes";
 
 export interface AddProjectRequest {
     name: string;
@@ -17,10 +18,15 @@ export interface Project {
     description?: string;
     customerIdRequired: boolean;
     defaultPickupDurationInMinutes?: number;
-    depotAddress: AddAddressRequest;
-    deliveryDays?: DayOfWeek[];
+    depotAddress: Address;
+    deliveryDays: string[];
     contactLookupFields: string[];
     users?: UserOfProject[];
+}
+
+export interface UserOfProject{
+    userId: string;
+    permissions: string[];
 }
 
 export interface GetAllProjectsResult {
@@ -44,8 +50,6 @@ export interface ProjectAnalyticsResult {
     jobsPerDay: Record<string, number>;
 }
 
-export interface UserOfProject {
-    userId: string;
-    permissions: string[]; // You can import a stricter type (e.g. Actions) from UsersToProjectsTypes.ts if desired.
-    isDefaultProject?: boolean;
+export interface GetSingleProjectResult {
+    project: Project
 }

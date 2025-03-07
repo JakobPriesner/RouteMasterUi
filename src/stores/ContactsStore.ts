@@ -1,25 +1,147 @@
 import { BaseStore } from './BaseStore';
 import { CancelToken } from 'axios';
-import { AddContactRequest, GetAllContactsResult, Contact } from '../types/ContactsTypes';
-import {useNotifications} from "@toolpad/core/useNotifications";
+import {
+    AddContactRequest,
+    Contact,
+    GetAllContactsByIdsRequest,
+    GetAllContactsResult,
+    GetContactByIdResponse, LookupContactsResult
+} from '../types/ContactsTypes';
+import { BehaviorSubject } from 'rxjs';
 
 class ContactsStoreClass extends BaseStore<GetAllContactsResult> {
-    async getAllContactsOfProject(
+    protected contacts$ = new BehaviorSubject<{ [key: string]: Contact }>({});
+    protected lookup$: { [search: string]: LookupContactsResult } = {};
+    protected cachedPages: { [key: string]: BehaviorSubject<GetAllContactsResult> } = {};
+
+    getAllContactsOfProject(
         projectId: string,
         filters: { page?: number; pageSize?: number; search?: string } = {},
         cancelToken?: CancelToken
-    ): Promise<GetAllContactsResult> {
-        try {
-            const response = await this.axios.get<GetAllContactsResult>(
-                `/v1/projects/${projectId}/contacts`,
-                { params: filters, cancelToken }
-            );
-            this.setState(response.data);
-            return response.data;
-        } catch (error: any) {
-            this.handleError(error, 'Failed to fetch contacts.');
-            throw error;
+    ): BehaviorSubject<GetAllContactsResult> {
+        const initialData: GetAllContactsResult = { contacts: [], matchingContactsCount: 0 };
+        const subject = new BehaviorSubject<GetAllContactsResult>(initialData);
+
+        const { page = 1, pageSize = 20, search = '' } = filters;
+        const key = `${projectId}|${page}|${pageSize}|${search}`;
+
+        if (this.cachedPages[key]) {
+            this.cachedPages[key].subscribe(subject);
+            return subject;
         }
+
+        this.cachedPages[key] = subject;
+
+        this.axios
+            .get<GetAllContactsResult>(`/v1/projects/${projectId}/contacts`, {
+                params: { ...filters },
+                cancelToken
+            })
+            .then(response => {
+                subject.next(response.data);
+                this.addContactsToCache(response.data.contacts);
+            })
+            .catch(error => {
+                this.handleError(error, 'Failed to fetch contacts.');
+                subject.error(error);
+            });
+
+        return subject;
+    }
+
+    getContactsByIds(
+        projectId: string,
+        contactIds: string[],
+        cancelToken?: CancelToken
+    ): BehaviorSubject<Contact[]> {
+        const subject = new BehaviorSubject<Contact[]>([]);
+
+        this.contacts$.subscribe(cachedContacts => {
+            const localContacts = Object.values(cachedContacts).filter(contact =>
+                contactIds.includes(contact.id)
+            );
+
+            if (localContacts.length === contactIds.length) {
+                subject.next(localContacts);
+                return;
+            }
+
+            const missingContacts = contactIds.filter(
+                id => !localContacts.some(contact => contact.id === id)
+            );
+            const request: GetAllContactsByIdsRequest = {
+                contactIds: missingContacts
+            };
+
+            this.axios
+                .post<GetAllContactsResult>(`/v1/projects/${projectId}/contacts/batch-get`, request, { cancelToken })
+                .then(response => {
+                    this.addContactsToCache(response.data.contacts);
+                    const updatedContacts = [
+                        ...localContacts,
+                        ...response.data.contacts.filter(contact => missingContacts.includes(contact.id))
+                    ];
+                    subject.next(updatedContacts);
+                })
+                .catch(error => {
+                    this.handleError(error, 'Failed to load contacts.');
+                    subject.error(error);
+                });
+        });
+
+        return subject;
+    }
+
+    getContactById(
+        projectId: string,
+        contactId: string,
+        cancelToken?: CancelToken
+    ): BehaviorSubject<Contact | null> {
+        const subject = new BehaviorSubject<Contact | null>(null);
+
+        this.contacts$.subscribe(cachedContacts => {
+            if (cachedContacts[contactId]) {
+                subject.next(cachedContacts[contactId]);
+                return;
+            }
+
+            this.axios
+                .get<GetContactByIdResponse>(`/v1/projects/${projectId}/contacts/${contactId}`, { cancelToken })
+                .then(response => {
+                    this.addContactsToCache([response.data.contact]);
+                    subject.next(response.data.contact);
+                })
+                .catch(error => {
+                    this.handleError(error, 'Failed to load contact.');
+                    subject.error(error);
+                });
+        });
+
+        return subject;
+    }
+
+    async lookupContacts(projectId: string, search: string, additionalFields: string[], signal: AbortSignal): Promise<LookupContactsResult> {
+        if (search.length < 4) {
+            return {contacts: [], matchingContactsCount: 0};
+        }
+
+        const key = `${projectId}|${search}|${additionalFields.join(',')}`;
+
+        if (key in this.lookup$) {
+            return this.lookup$[key];
+        }
+
+        const additionalFieldsAsString = additionalFields.join(",");
+        const response = await this.axios.get<LookupContactsResult>(
+            `/v1/projects/${projectId}/contacts/lookup?search=${encodeURI(search)}&additionalFields=${encodeURI(additionalFieldsAsString)}`,
+            {signal}
+        );
+
+        if (response) {
+            this.lookup$[key] = response?.data;
+        }
+
+        return response?.data;
     }
 
     async addContact(
@@ -27,19 +149,25 @@ class ContactsStoreClass extends BaseStore<GetAllContactsResult> {
         contactData: AddContactRequest,
         cancelToken?: CancelToken
     ): Promise<string> {
-        const notifications = useNotifications();
         try {
             const response = await this.axios.post<string>(
                 `/v1/projects/${projectId}/contacts`,
                 contactData,
                 { cancelToken }
             );
-            notifications.show('Contact added successfully!', {
-                severity: 'success',
-                autoHideDuration: 3000,
-            });
-            // Optionally refresh the contacts list
-            await this.getAllContactsOfProject(projectId, {}, cancelToken);
+
+            const newContact: Contact = {
+                ...contactData,
+                id: response.data,
+                address: {
+                    ...contactData.address,
+                    note: contactData.address.note ?? ''
+                }
+            };
+
+            this.addContactsToCache([newContact]);
+            this.updateCachedPagesOnAddContact(projectId, newContact);
+
             return response.data;
         } catch (error: any) {
             this.handleError(error, 'Failed to add contact.');
@@ -47,49 +175,26 @@ class ContactsStoreClass extends BaseStore<GetAllContactsResult> {
         }
     }
 
-    /**
-     * Optimistically updates a contact.
-     * Immediately updates local state then confirms with the server.
-     * Rolls back if the update fails.
-     */
     async updateContact(
         projectId: string,
         contactId: string,
         contactData: Partial<Contact>,
         cancelToken?: CancelToken
-    ): Promise<Contact> {
-        const notifications = useNotifications();
-        const url = `/v1/projects/${projectId}/contacts/${contactId}`;
-        const currentState = this.subject.getValue();
-        if (!currentState) {
-            throw new Error('No contacts data available for optimistic update.');
-        }
-        const originalContact = currentState.contacts.find((c) => c.id === contactId);
-        if (!originalContact) {
-            throw new Error('Contact not found in local state.');
-        }
-        const optimisticallyUpdated = { ...originalContact, ...contactData };
-        const updatedContacts = currentState.contacts.map((c) =>
-            c.id === contactId ? optimisticallyUpdated : c
-        );
-        this.setState({ ...currentState, contacts: updatedContacts });
+    ): Promise<void> {
+        const currentContacts = this.contacts$.getValue();
+        const originalContact = currentContacts[contactId] || null;
+        const updatedContact = { ...originalContact, ...contactData, id: contactId };
+
+        this.updateContactsInCache(updatedContact);
 
         try {
-            const response = await this.axios.put<Contact>(url, contactData, { cancelToken });
-            const confirmedContacts = currentState.contacts.map((c) =>
-                c.id === contactId ? response.data : c
-            );
-            this.setState({ ...currentState, contacts: confirmedContacts });
-            notifications.show('Contact updated successfully!', {
-                severity: 'success',
-                autoHideDuration: 3000,
-            });
-            return response.data;
-        } catch (error: any) {
-            // Roll back optimistic update.
-            this.setState(currentState);
+            const url = `/v1/projects/${projectId}/contacts/${contactId}`;
+            await this.axios.put<Contact>(url, contactData, { cancelToken });
+        } catch (error) {
             this.handleError(error, 'Failed to update contact.');
-            throw error;
+            if (originalContact) {
+                this.updateContactsInCache(originalContact);
+            }
         }
     }
 
@@ -98,23 +203,74 @@ class ContactsStoreClass extends BaseStore<GetAllContactsResult> {
         contactId: string,
         cancelToken?: CancelToken
     ): Promise<void> {
-        const notifications = useNotifications();
-        const url = `/v1/projects/${projectId}/contacts/${contactId}`;
+        const currentContacts = this.contacts$.getValue();
+        const deletedContact = currentContacts[contactId];
+
+        this.deleteContactInCache(contactId);
+
         try {
+            const url = `/v1/projects/${projectId}/contacts/${contactId}`;
             await this.axios.delete(url, { cancelToken });
-            const currentState = this.subject.getValue();
-            if (currentState) {
-                const updatedContacts = currentState.contacts.filter((c) => c.id !== contactId);
-                this.setState({ ...currentState, contacts: updatedContacts });
-            }
-            notifications.show('Contact deleted successfully!', {
-                severity: 'success',
-                autoHideDuration: 3000,
-            });
         } catch (error: any) {
             this.handleError(error, 'Failed to delete contact.');
+            if (deletedContact) {
+                this.addContactsToCache([deletedContact]);
+            }
             throw error;
         }
+    }
+
+    protected addContactsToCache(contacts: Contact[]): void {
+        const currentContacts = this.contacts$.getValue();
+        const updatedContacts = { ...currentContacts };
+
+        contacts.forEach(contact => {
+            updatedContacts[contact.id] = contact;
+        });
+
+        this.contacts$.next(updatedContacts);
+    }
+
+    protected updateContactsInCache(contact: Contact): void {
+        const currentContacts = this.contacts$.getValue();
+        const updatedContacts = { ...currentContacts, [contact.id]: contact };
+        this.contacts$.next(updatedContacts);
+    }
+
+    protected deleteContactInCache(contactId: string): void {
+        const currentContacts = this.contacts$.getValue();
+        const updatedContacts = { ...currentContacts };
+        delete updatedContacts[contactId];
+        this.contacts$.next(updatedContacts);
+    }
+
+    protected updateCachedPagesOnAddContact(projectId: string, newContact: Contact): void {
+        Object.entries(this.cachedPages).forEach(([key, subject]) => {
+            const [keyProjectId, pageStr, pageSizeStr, ...searchParts] = key.split('|');
+            if (keyProjectId !== projectId) return;
+
+            const page = Number(pageStr);
+            const pageSize = Number(pageSizeStr);
+
+            const pageData = subject.getValue();
+            pageData.matchingContactsCount = (pageData.matchingContactsCount || 0) + 1;
+
+            if (page === 1 && pageData.contacts.length < pageSize) {
+                pageData.contacts.unshift(newContact);
+            } else if (page > 1) {
+                const pagesForProject = Object.keys(this.cachedPages)
+                    .filter(k => {
+                        const [projId, , , searchPart] = k.split('|');
+                        return projId === projectId && !searchPart;
+                    })
+                    .map(k => Number(k.split('|')[1]));
+                const maxPage = pagesForProject.length > 0 ? Math.max(...pagesForProject) : 1;
+                if (page === maxPage) {
+                    pageData.contacts.push(newContact);
+                }
+            }
+            subject.next(pageData);
+        });
     }
 }
 

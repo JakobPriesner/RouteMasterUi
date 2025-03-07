@@ -1,57 +1,67 @@
-// src/stores/UsersStore.ts
 import { BaseStore } from './BaseStore';
 import { CancelToken } from 'axios';
 import { User } from '../types/UsersTypes';
-import {useNotifications} from "@toolpad/core/useNotifications";
+import { BehaviorSubject } from 'rxjs';
+import { useNotifications } from '@toolpad/core/useNotifications';
 
-class UsersStoreClass extends BaseStore<User> {
-    async getCurrentUser(cancelToken?: CancelToken): Promise<User> {
-        try {
-            const response = await this.axios.get<User>(
-                '/v1/users/me',
-                { cancelToken }
-            );
-            this.setState(response.data);
-            return response.data;
-        } catch (error: any) {
-            this.handleError(error, 'Failed to fetch current user.');
-            throw error;
+class UsersStoreClass extends BaseStore {
+    protected currentUser$ = new BehaviorSubject<User | null>(null);
+    private currentUserPromise: Promise<User> | null = null;
+
+    getCurrentUser(cancelToken?: CancelToken): BehaviorSubject<User | null> {
+        if (this.currentUser$.getValue()) {
+            return this.currentUser$;
         }
+        if (this.currentUserPromise) {
+            return this.currentUser$;
+        }
+        this.currentUserPromise = this.axios
+            .get<User>('/v1/users/me', { cancelToken })
+            .then(response => {
+                this.currentUser$.next(response.data);
+                return response.data;
+            })
+            .catch(error => {
+                this.handleError(error, 'Failed to fetch current user.');
+                this.currentUser$.error(error);
+                throw error;
+            })
+            .finally(() => {
+                this.currentUserPromise = null;
+            });
+        return this.currentUser$;
     }
 
-    async deleteCurrentUser(token: string, cancelToken?: CancelToken): Promise<void> {
+    deleteCurrentUser(token: string, cancelToken?: CancelToken): BehaviorSubject<null> {
+        const subject = new BehaviorSubject<null>(null);
         const notifications = useNotifications();
-        try {
-            await this.axios.delete('/v1/users/me', {
-                params: { token },
-                cancelToken,
+        this.axios
+            .delete('/v1/users/me', { params: { token }, cancelToken })
+            .then(() => {
+                notifications.show('User deleted successfully!', { severity: 'success', autoHideDuration: 3000 });
+                subject.next(null);
+            })
+            .catch(error => {
+                this.handleError(error, 'Failed to delete current user.');
+                subject.error(error);
             });
-            notifications.show('User deleted successfully!', {
-                severity: 'success',
-                autoHideDuration: 3000,
-            });
-        } catch (error: any) {
-            this.handleError(error, 'Failed to delete current user.');
-            throw error;
-        }
+        return subject;
     }
 
-    async requestUserDeletion(cancelToken?: CancelToken): Promise<void> {
+    requestUserDeletion(cancelToken?: CancelToken): BehaviorSubject<null> {
+        const subject = new BehaviorSubject<null>(null);
         const notifications = useNotifications();
-        try {
-            await this.axios.post(
-                '/v1/users/me/request-deletion',
-                null,
-                { cancelToken }
-            );
-            notifications.show('User deletion requested!', {
-                severity: 'success',
-                autoHideDuration: 3000,
+        this.axios
+            .post('/v1/users/me/request-deletion', null, { cancelToken })
+            .then(() => {
+                notifications.show('User deletion requested!', { severity: 'success', autoHideDuration: 3000 });
+                subject.next(null);
+            })
+            .catch(error => {
+                this.handleError(error, 'Failed to request user deletion.');
+                subject.error(error);
             });
-        } catch (error: any) {
-            this.handleError(error, 'Failed to request user deletion.');
-            throw error;
-        }
+        return subject;
     }
 }
 

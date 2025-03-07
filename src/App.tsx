@@ -1,27 +1,16 @@
 import * as React from 'react';
-import DashboardIcon from '@mui/icons-material/Dashboard';
-import ShoppingCartIcon from '@mui/icons-material/ShoppingCart';
-import { Outlet } from 'react-router';
+import {Outlet, useParams} from 'react-router';
 import { ReactRouterAppProvider } from '@toolpad/core/react-router';
-import type { Navigation, Authentication } from '@toolpad/core/AppProvider';
+import type { Authentication } from '@toolpad/core/AppProvider';
 import { firebaseSignOut, onAuthStateChanged } from './firebase/auth';
 import SessionContext, { type Session } from './SessionContext';
-
-const NAVIGATION: Navigation = [
-  {
-    kind: 'header',
-    title: 'Main items',
-  },
-  {
-    title: 'Dashboard',
-    icon: <DashboardIcon />,
-  },
-  {
-    segment: 'orders',
-    title: 'Orders',
-    icon: <ShoppingCartIcon />,
-  },
-];
+import {useEffect} from "react";
+import {useNavigate} from "react-router-dom";
+import {User} from "./types/UsersTypes";
+import {UsersStore} from "./stores/UsersStore";
+import {useNavigation} from "./hooks/navigation";
+import {LocalizationProvider} from "@mui/x-date-pickers";
+import {AdapterDateFns} from "@mui/x-date-pickers/AdapterDateFnsV3";
 
 const BRANDING = {
   title: "Route Master"
@@ -35,6 +24,10 @@ const AUTHENTICATION: Authentication = {
 export default function App() {
   const [session, setSession] = React.useState<Session | null>(null);
   const [loading, setLoading] = React.useState(true);
+  const [user, setUser] = React.useState<User>();
+  const {projectId} = useParams();
+  const navigation = useNavigation();
+  const navigate = useNavigate();
 
   const sessionContextValue = React.useMemo(
     () => ({
@@ -45,8 +38,14 @@ export default function App() {
     [session, loading],
   );
 
-  React.useEffect(() => {
-    const unsubscribe = onAuthStateChanged((user) => {
+  useEffect(() => {
+    const userSubscription = UsersStore.getCurrentUser().subscribe(user => {
+      setUser(user);
+      if (user) {
+        setLoading(false);
+      }
+    });
+    const authStateUnsubscribe = onAuthStateChanged((user) => {
       if (user) {
         setSession({
           user: {
@@ -58,21 +57,46 @@ export default function App() {
       } else {
         setSession(null);
       }
-      setLoading(false);
     });
 
-    return () => unsubscribe();
+    return () => {
+      userSubscription.unsubscribe();
+      authStateUnsubscribe()
+    };
   }, []);
+
+  useEffect(() => {
+    if (loading) {
+      return;
+    }
+
+    if (!user) {
+      navigate("/no-connection");
+    }
+
+    if (projectId) {
+      return;
+    }
+
+    if (user.projects.length === 1) {
+      navigate(`/projects/${user.projects[0].projectId}`);
+    } else if (user.projects.length > 1) {
+      const defaultProject = user.projects.find(p => p.isDefaultProject)  || user.projects[0];
+      navigate(`/projects/${defaultProject.projectId}`);
+    }
+  }, [user]);
 
   return (
     <ReactRouterAppProvider
-      navigation={NAVIGATION}
+      navigation={navigation}
       branding={BRANDING}
       session={session}
       authentication={AUTHENTICATION}
     >
       <SessionContext.Provider value={sessionContextValue}>
-        <Outlet />
+        <LocalizationProvider dateAdapter={AdapterDateFns}>
+          <Outlet />
+        </LocalizationProvider>
       </SessionContext.Provider>
     </ReactRouterAppProvider>
   );

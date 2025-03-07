@@ -1,8 +1,9 @@
-import {browserSessionPersistence, setPersistence, signInWithEmailAndPassword, signOut,} from 'firebase/auth';
+import {browserSessionPersistence, browserLocalPersistence, setPersistence, signInWithEmailAndPassword, signOut} from 'firebase/auth';
 import {firebaseAuth} from './firebaseConfig';
 
-export const signInWithEmail = async (email: string, password: string) => {
-  return setPersistence(firebaseAuth, browserSessionPersistence).then(async () => {
+export const signInWithEmail = async (email: string, password: string, remember: boolean) => {
+  const persistence = remember ? browserLocalPersistence : browserSessionPersistence;
+  return setPersistence(firebaseAuth, persistence).then(async () => {
     try {
       const result = await signInWithEmailAndPassword(firebaseAuth, email, password);
 

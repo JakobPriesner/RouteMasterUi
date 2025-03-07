@@ -1,5 +1,3 @@
-// src/types/UsersTypes.ts
-
 import { BillingToken } from './BillingTypes';
 import { ProjectOfUser } from './UsersToProjectsTypes';
 
